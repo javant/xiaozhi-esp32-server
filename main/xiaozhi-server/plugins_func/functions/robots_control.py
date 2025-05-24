@@ -48,42 +48,34 @@ class RobotController:
         self.client_id = f"robot_{uuid.uuid4()}"
         self.client = mqtt.Client(self.client_id)
 
-        # 认证设置
         if mqtt_user and mqtt_pass:
-            logger.bind(tag=TAG).info("MQTT机器人控制核心类正在使用认证设置")
+            logger.bind(tag=TAG).info("使用MQTT认证")
             self.client.username_pw_set(mqtt_user, mqtt_pass)
 
-        # 回调绑定
-        logger.bind(tag=TAG).info("MQTT机器人控制核心类正在绑定回调函数")
         self.client.on_connect = self._on_connect
         self.client.on_disconnect = self._on_disconnect
 
         try:
-            logger.bind(tag=TAG).info(f"正在连接MQTT服务器 {mqtt_host}:{mqtt_port}")
+            logger.bind(tag=TAG).info(f"连接MQTT服务器 {mqtt_host}:{mqtt_port}")
             self.client.connect(mqtt_host, mqtt_port)
             self.client.loop_start()
-            # 阻塞等待连接（最多5秒）
             import time
             for _ in range(50):
                 if self._is_connected:
                     break
                 time.sleep(0.1)
             self._initialized = True
-            logger.bind(tag=TAG).info(f"初始化MQTT机器人控制类完成:{getattr(self, '_initialized', False)}")
+            logger.bind(tag=TAG).info(f"MQTT初始化完成:{getattr(self, '_initialized', False)}")
         except Exception as e:
             logger.bind(tag=TAG).error(f"MQTT连接失败: {str(e)}")
 
     def _on_connect(self, client: mqtt.Client, userdata: Any, flags: Dict, rc: int):
-        """连接状态回调"""
-        logger.bind(tag=TAG).info(f"MQTT连接状态回调: {mqtt.connack_string(rc)}")
+        logger.bind(tag=TAG).info(f"MQTT连接状态: {mqtt.connack_string(rc)}")
         self._is_connected = rc == 0
-        logger.bind(tag=TAG).info(f"MQTT连接{'成功' if rc == 0 else f'失败(代码:{rc})'}")
 
     def _on_disconnect(self, client: mqtt.Client, userdata: Any, rc: int):
-        """断开连接回调"""
-        logger.bind(tag=TAG).info(f"MQTT断开连接回调: {mqtt.connack_string(rc)}")
+        logger.bind(tag=TAG).error(f"MQTT断开连接: {mqtt.connack_string(rc)} (代码:{rc})")
         self._is_connected = False
-        logger.bind(tag=TAG).error(f"MQTT连接断开(代码:{rc})")
 
     def send_action(
             self,
@@ -91,34 +83,28 @@ class RobotController:
             robot_topic: str = "esp32/robot1/sub",
             params: dict = None
     ) -> dict:
-        """指令发送方法（同步）"""
-        logger.bind(tag=TAG).info(f"发送指令:action={action},robot_topic={robot_topic},params={str(params)}")
-
+        logger.bind(tag=TAG).info(f"发送指令: action={action}, topic={robot_topic}")
         if not self._is_connected:
-            logger.bind(tag=TAG).info("MQTT未连接")
+            logger.bind(tag=TAG).error("MQTT未连接")
             return "ERROR：MQTT未连接"
-
         if action not in ROBOT_ACTIONS:
-            logger.bind(tag=TAG).info(f"无效的动作指令:{action}")
+            logger.bind(tag=TAG).error(f"无效动作指令: {action}")
             return f"ERROR:无效的动作指令{action}"
-
         try:
             payload = action
-            result = self.client.publish(robot_topic, payload, 1)  # 设置 QoS=1
-            logger.bind(tag=TAG).info(f"发送指令到MQTT服务器：{action}, result={result.rc}")
+            result = self.client.publish(robot_topic, payload, 1)
+            logger.bind(tag=TAG).info(f"指令已发送: {action}, result={result.rc}")
             return f"SUCCESS:{action}命令执行成功"
         except Exception as e:
             logger.bind(tag=TAG).error(f"指令发送失败: {str(e)}")
             return f"ERROR:{action}命令执行失败"
 
     def disconnect(self):
-        """断开MQTT连接（同步）"""
         if self._is_connected:
-            logger.bind(tag=TAG).info("正在断开MQTT连接...")
+            logger.bind(tag=TAG).info("断开MQTT连接")
             self.client.disconnect()
             self.client.loop_stop()
             self._is_connected = False
-            logger.bind(tag=TAG).info("MQTT连接已断开")
 
 
 # 大模型回调接口
@@ -159,7 +145,7 @@ ROBOT_CONTROL_FUNCTION_DESC = {
                         {"type": "array", "items": {"type": "integer"}}
                     ],
                     "default": 1,
-                    "description": "机器人ID,支持单个ID(整数)或ID列表(整数列表),默认为1，ID最大数为3,可同时控制多个机器人,如[1,2]表示控制1号和2号机器人,当听到全部或者所有机器人指令时robot_id为[1,2,3]。"
+                    "description": "机器人ID,支持单个ID(整数)或ID列表(整数列表),默认为1，ID的值最大数为3,可同时控制多个机器人,如[1,2]表示控制1号和2号机器人,当听到全部或者所有机器人指令时robot_id为[1,2,3]。"
                 },
                 "params": {
                     "type": "object",
@@ -174,48 +160,37 @@ ROBOT_CONTROL_FUNCTION_DESC = {
 
 @register_function('robots_control', ROBOT_CONTROL_FUNCTION_DESC, ToolType.SYSTEM_CTL)
 def robots_control(conn, action: str, robot_id = 1, params: dict = None):
-    """支持多个机器人控制，robot_id可为int或list[int]，默认1号机器人"""
-    logger.bind(tag=TAG).info(f"执行机器人控制指令{action},robot_id={robot_id}")
-
+    logger.bind(tag=TAG).info(f"执行机器人控制: action={action}, robot_id={robot_id}")
     try:
         plugin_config = conn.config["plugins"]["robots_control"]
         client_id = plugin_config.get("mqtt_client_id", f"robot_{uuid.uuid4()}")
         mqtt_host = plugin_config.get("mqtt_server", "mqtt.xiaozhi.vip")
-        mqtt_port = int(plugin_config.get("mqtt_port", 1883))  # 标准端口
+        mqtt_port = int(plugin_config.get("mqtt_port", 1883))
         mqtt_user = plugin_config.get("mqtt_user")
         mqtt_pass = plugin_config.get("mqtt_password")
-
-        # 敏感信息脱敏
         log_pass = "***" if mqtt_pass else ""
-        logger.bind(tag=TAG).info(f"MQTT连接信息: host={mqtt_host}, port={mqtt_port}, user={mqtt_user}, pass={log_pass}")
-
+        logger.bind(tag=TAG).info(f"MQTT连接: host={mqtt_host}, port={mqtt_port}, user={mqtt_user}, pass={log_pass}")
         controller = RobotController(client_id, mqtt_host, mqtt_port, mqtt_user, mqtt_pass)
         if not controller._is_connected:
             return ActionResponse(Action.REQLLM,  "MQTT连接失败，请稍后再试。", None)
-
-        # 支持robot_id为单个或多个
         if isinstance(robot_id, int):
             robot_ids = [robot_id]
         elif isinstance(robot_id, list):
             robot_ids = robot_id
         else:
             return ActionResponse(Action.REQLLM, "robot_id参数类型错误，应为整数或整数列表。", None)
-
         results = {}
         for rid in robot_ids:
             robot_topic = f"esp32/robot{rid}/sub"
-            logger.bind(tag=TAG).info(f"执行机器人控制指令: action={action}, params={params},robot_topic={robot_topic}")
+            logger.bind(tag=TAG).info(f"发送到机器人{rid}: action={action}")
             result = controller.send_action(action, robot_topic, params)
-            logger.bind(tag=TAG).info(f"机器人{rid}控制指令执行结果: {result}")
             results[rid] = result
-
         return ActionResponse(Action.REQLLM, results, None)
-
     except KeyError as ke:
         logger.bind(tag=TAG).error(f"配置缺失: {str(ke)}")
         return ActionResponse(Action.REQLLM, "缺少必要配置，请检查设置。", None)
     except Exception as e:
-        logger.bind(tag=TAG).error(f"执行机器人控制指令失败: {str(e)}")
+        logger.bind(tag=TAG).error(f"执行机器人控制失败: {str(e)}")
         return ActionResponse(Action.REQLLM, "执行机器人控制指令失败", None)
     finally:
         logger.bind(tag=TAG).info("MQTT连接已关闭")
