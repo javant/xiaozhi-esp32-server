@@ -126,7 +126,7 @@ ROBOT_CONTROL_FUNCTION_DESC = {
     "type": "function",
     "function": {
         "name": "robots_control",
-        "description": "控制机器人执行指定动作",
+        "description": "控制机器人执行指定动作，可同时控制多个机器人。",
         "parameters": {
             "type": "object",
             "properties": {
@@ -137,7 +137,7 @@ ROBOT_CONTROL_FUNCTION_DESC = {
                         "hello", "omni_walk", "moonwalk_L", "dance", "up_down",
                         "push_up", "front_back", "wave_hand", "scared"
                     ],
-                    "description": "四足机器人动作指令说明,每行冒号'：'前面的是机器人指令，后面为指令描述，用户可以通过中英文或者任意语言操作"
+                    "description": "四足机器人动作指令说明,每行冒号'：'前面的是机器人指令，后面为指令描述，用户可以通过中英文或者任意语言操作,可以同时控制单个或多个机器人，当说所有机器人时，指的是1/2/3号机器人:"
                                    "forward：前进指令，控制机器人向前移动;"
                                    "turn_L：左转指令，机器人向左旋转或调整方向;"
                                    "home 归位/复位指令，使机器人回到预设的初始姿态或位置;"
@@ -154,9 +154,12 @@ ROBOT_CONTROL_FUNCTION_DESC = {
                                    "scared：防御/受惊动作，可能触发蜷缩、后退等保护性姿态;"
                 },
                 "robot_id": {
-                    "type": "integer",
+                    "oneOf": [
+                        {"type": "integer"},
+                        {"type": "array", "items": {"type": "integer"}}
+                    ],
                     "default": 1,
-                    "description": "机器人ID，默认为1"
+                    "description": "机器人ID，支持单个ID或ID列表，默认为1，可同时控制多个机器人"
                 },
                 "params": {
                     "type": "object",
@@ -170,8 +173,8 @@ ROBOT_CONTROL_FUNCTION_DESC = {
 }
 
 @register_function('robots_control', ROBOT_CONTROL_FUNCTION_DESC, ToolType.SYSTEM_CTL)
-def robots_control(conn, action: str, robot_id: int = 1, params: dict = None):
-    """实际执行函数（同步）"""
+def robots_control(conn, action: str, robot_id = 1, params: dict = None):
+    """支持多个机器人控制，robot_id可为int或list[int]，默认1号机器人"""
     logger.bind(tag=TAG).info(f"执行机器人控制指令{action},robot_id={robot_id}")
 
     try:
@@ -190,13 +193,23 @@ def robots_control(conn, action: str, robot_id: int = 1, params: dict = None):
         if not controller._is_connected:
             return ActionResponse(Action.REQLLM,  "MQTT连接失败，请稍后再试。", None)
 
-        robot_topic = f"esp32/robot{robot_id}/sub"
-        logger.bind(tag=TAG).info(f"执行机器人控制指令: action={action}, params={params},robot_topic={robot_topic}")
+        # 支持robot_id为单个或多个
+        if isinstance(robot_id, int):
+            robot_ids = [robot_id]
+        elif isinstance(robot_id, list):
+            robot_ids = robot_id
+        else:
+            return ActionResponse(Action.REQLLM, "robot_id参数类型错误，应为整数或整数列表。", None)
 
-        result = controller.send_action(action, robot_topic, params)
-        logger.bind(tag=TAG).info(f"机器人控制指令执行结果: {result}")
+        results = {}
+        for rid in robot_ids:
+            robot_topic = f"esp32/robot{rid}/sub"
+            logger.bind(tag=TAG).info(f"执行机器人控制指令: action={action}, params={params},robot_topic={robot_topic}")
+            result = controller.send_action(action, robot_topic, params)
+            logger.bind(tag=TAG).info(f"机器人{rid}控制指令执行结果: {result}")
+            results[rid] = result
 
-        return ActionResponse(Action.REQLLM, result, None)
+        return ActionResponse(Action.REQLLM, results, None)
 
     except KeyError as ke:
         logger.bind(tag=TAG).error(f"配置缺失: {str(ke)}")
