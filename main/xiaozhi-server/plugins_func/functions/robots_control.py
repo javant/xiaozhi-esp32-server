@@ -137,8 +137,7 @@ ROBOT_CONTROL_FUNCTION_DESC = {
                         "hello", "omni_walk", "moonwalk_L", "dance", "up_down",
                         "push_up", "front_back", "wave_hand", "scared"
                     ],
-                    "description": "四足机器人动作指令。每行冒号':'前面为控制指令，后为中文描述，支持通过中英文或任意语言操作。"
-                                    "动作指令列表："
+                    "description": "下面为四足机器人动作指令。每行冒号':'前面为机器人控制指令，后面为指令描述，可以通过中英文或任意自然语言操作机器人。当听到全部或者所有机器人时，特指robot_id为[1,2,3]，机器人ID不能大于3。机器人指令只能为enum列表也就是下面列出的动作指令。"
                                     "forward: 前进,控制机器人向前移动;"
                                     "turn_L: 左转,机器人向左旋转或调整方向;"
                                     "home: 归位/复位，使机器人回到预设的初始姿态或位置;"
@@ -160,7 +159,7 @@ ROBOT_CONTROL_FUNCTION_DESC = {
                         {"type": "array", "items": {"type": "integer"}}
                     ],
                     "default": 1,
-                    "description": "机器人ID,支持单个ID(整数)或ID列表(整数列表),默认为1,可同时控制多个机器人,如[1,2]表示控制1号和2号机器人,当听到全部或者所有机器人指令时robot_id为[1,2,3]。"
+                    "description": "机器人ID,支持单个ID(整数)或ID列表(整数列表),默认为1，ID最大数为3,可同时控制多个机器人,如[1,2]表示控制1号和2号机器人,当听到全部或者所有机器人指令时robot_id为[1,2,3]。"
                 },
                 "params": {
                     "type": "object",
